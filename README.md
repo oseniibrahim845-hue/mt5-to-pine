@@ -75,3 +75,20 @@ It is a dev-only check; pineforge-codegen is PolyForm Noncommercial licensed and
 python3 -m venv .pf && .pf/bin/pip install pineforge-codegen
 PINEFORGE_PYTHON=.pf/bin/python npm test
 ```
+
+## Deploy (Railway)
+
+1. New Project → Deploy from GitHub repo → `mt5-to-pine` (uses `Dockerfile` and `railway.json`).
+2. Add a Volume mounted at `/data` (keeps API keys across deploys).
+3. Variables: `KEYS_FILE=/data/keys.json`, `ADMIN_TOKEN=<random string, 24+ chars>`.
+4. Settings → Networking → Generate Domain.
+
+Create a key for a customer:
+
+```bash
+curl -s https://<host>/admin/keys -H "Authorization: Bearer $ADMIN_TOKEN" \
+  -H "Content-Type: application/json" -d '{"name":"luis","credits":100}'
+```
+
+Admin endpoints: `POST /admin/keys`, `POST /admin/credits` (`{"name","credits"}`), `GET /admin/keys`.
+They are disabled when `ADMIN_TOKEN` is not set.

@@ -1,6 +1,7 @@
 // HTTP API: POST MQL5 source, get Pine Script v6 back.
 
 import express, { type NextFunction, type Request, type Response } from "express";
+import { timingSafeEqual } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { KeyStore } from "./keys.js";
 import { convert } from "./translator.js";
@@ -9,7 +10,7 @@ import { VERSION } from "./version.js";
 const MAX_SOURCE_BYTES = 512 * 1024;
 const RATE_LIMIT_PER_MINUTE = 60;
 
-export function createApp(store: KeyStore) {
+export function createApp(store: KeyStore, adminToken = process.env.ADMIN_TOKEN ?? "") {
   const app = express();
   app.disable("x-powered-by");
   app.use(express.json({ limit: MAX_SOURCE_BYTES * 2 }));
@@ -35,6 +36,60 @@ export function createApp(store: KeyStore) {
     res.locals.apiKey = key;
     next();
   };
+
+  // Admin endpoints are off unless ADMIN_TOKEN is set (at least 24 characters).
+  const admin = (req: Request, res: Response, next: NextFunction) => {
+    const header = req.get("authorization") ?? "";
+    const given = Buffer.from(header.startsWith("Bearer ") ? header.slice(7).trim() : "");
+    const expected = Buffer.from(adminToken);
+    if (adminToken.length < 24 || given.length !== expected.length || !timingSafeEqual(given, expected)) {
+      res.status(401).json({ error: "admin access denied" });
+      return;
+    }
+    next();
+  };
+
+  app.post("/admin/keys", admin, (req, res) => {
+    const { name, credits } = (req.body ?? {}) as { name?: unknown; credits?: unknown };
+    if (typeof name !== "string" || !/^[\w.@-]{1,64}$/.test(name)) {
+      res.status(400).json({ error: "name must be 1-64 letters, numbers, . @ _ -" });
+      return;
+    }
+    const n = typeof credits === "number" && Number.isInteger(credits) && credits >= 0 ? credits : 50;
+    res.json({ name, credits: n, api_key: store.create(name, n), note: "The key is shown only once." });
+  });
+
+  app.post("/admin/credits", admin, (req, res) => {
+    const { name, credits } = (req.body ?? {}) as { name?: unknown; credits?: unknown };
+    if (typeof name !== "string" || typeof credits !== "number" || !Number.isInteger(credits)) {
+      res.status(400).json({ error: 'send {"name": "...", "credits": 10}' });
+      return;
+    }
+    res.status(store.addCredits(name, credits) ? 200 : 404).json({ ok: store.list().some((r) => r.name === name) });
+  });
+
+  app.get("/admin/keys", admin, (_req, res) => {
+    res.json(store.list());
+  });
+
+  app.get("/", (_req, res) => {
+    res.type("text/plain").send(
+      [
+        `mt5-to-pine ${VERSION}: convert MT5 Expert Advisors (MQL5) to Pine Script v6.`,
+        "",
+        "POST /v1/convert   send the .mq5 code (text/plain, or JSON {\"source\": \"...\"})",
+        "GET  /v1/usage     credits left on your key",
+        "GET  /v1/health    service status",
+        "",
+        "Auth: header 'Authorization: Bearer <your key>'",
+        "",
+        "Example:",
+        "  curl -s https://<this-host>/v1/convert \\",
+        "    -H 'Authorization: Bearer <key>' -H 'Content-Type: text/plain' \\",
+        "    --data-binary @MyEA.mq5",
+      ].join("\n"),
+    );
+  });
 
   app.get("/v1/health", (_req, res) => {
     res.json({ ok: true, version: VERSION });

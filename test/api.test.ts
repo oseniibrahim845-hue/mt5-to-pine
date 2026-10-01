@@ -52,3 +52,26 @@ describe("API", () => {
     expect(r.body).toMatchObject({ name: "tester", credits_remaining: 0, used: 2 });
   });
 });
+
+describe("admin API", () => {
+  const token = "x".repeat(32);
+  const store = new KeyStore(join(mkdtempSync(join(tmpdir(), "m2p-")), "keys.json"));
+  const app = createApp(store, token);
+
+  it("is closed without the token", async () => {
+    expect((await request(app).post("/admin/keys").send({ name: "a" })).status).toBe(401);
+    const closed = createApp(store, "");
+    expect((await request(closed).post("/admin/keys").set("Authorization", "Bearer ").send({ name: "a" })).status).toBe(401);
+  });
+  it("creates keys that work and adds credits", async () => {
+    const r = await request(app).post("/admin/keys").set("Authorization", `Bearer ${token}`).send({ name: "luis", credits: 1 });
+    expect(r.status).toBe(200);
+    const key = r.body.api_key as string;
+    expect((await request(app).get("/v1/usage").set("X-API-Key", key)).body.credits_remaining).toBe(1);
+    await request(app).post("/admin/credits").set("Authorization", `Bearer ${token}`).send({ name: "luis", credits: 5 });
+    expect((await request(app).get("/v1/usage").set("X-API-Key", key)).body.credits_remaining).toBe(6);
+    const list = await request(app).get("/admin/keys").set("Authorization", `Bearer ${token}`);
+    expect(list.body[0]).toMatchObject({ name: "luis", credits: 6 });
+    expect(JSON.stringify(list.body)).not.toContain(key);
+  });
+});
