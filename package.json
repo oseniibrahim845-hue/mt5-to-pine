@@ -1,0 +1,32 @@
+{
+  "name": "mt5-to-pine",
+  "version": "0.1.0",
+  "description": "Rules-based converter from MQL5 (MT5) Expert Advisors and indicators to Pine Script v6, with an HTTP API",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "mt5-to-pine": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx src/server.ts",
+    "start": "node dist/server.js",
+    "convert": "tsx src/cli.ts",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "license": "UNLICENSED",
+  "private": true,
+  "dependencies": {
+    "express": "^5.2.1"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.6.3",
+    "@types/supertest": "^7.2.1",
+    "supertest": "^7.3.0",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.3"
+  }
+}

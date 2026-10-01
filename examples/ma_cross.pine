@@ -1,0 +1,67 @@
+// This Pine Script was generated from MQL5 by mt5-to-pine.
+// Review the notes the converter returned before trading with it.
+//@version=6
+strategy("MA Cross EA", overlay = true, pyramiding = 1, calc_on_every_tick = false)
+
+// ---- Inputs ----
+InpFastPeriod = input.int(10, "Fast MA period")
+InpSlowPeriod = input.int(30, "Slow MA period")
+InpMethod_str = input.string("MODE_EMA", "MA method", options = ["MODE_SMA", "MODE_EMA", "MODE_SMMA", "MODE_LWMA"])
+InpMethod = InpMethod_str == "MODE_SMA" ? 0 : InpMethod_str == "MODE_EMA" ? 1 : InpMethod_str == "MODE_SMMA" ? 2 : 3
+InpLots = input.float(0.10, "Lot size")
+InpStopLoss = input.int(300, "Stop loss (points)")
+InpTakeProfit = input.int(600, "Take profit (points)")
+InpMagic = input.int(12345, "Magic number")
+
+// ---- Helpers ----
+f_ma(float src, simple int len, int maType) =>
+    switch maType
+        1 => ta.ema(src, len)
+        2 => ta.rma(src, len)
+        3 => ta.wma(src, len)
+        => ta.sma(src, len)
+// Position seen by the EA logic on this bar (MT5 updates it right after each order).
+var posState = array.new_float(1, 0.0)
+f_pos() => array.get(posState, 0)
+
+// ---- Indicators ----
+fast = f_ma(close, InpFastPeriod, InpMethod)
+slow = f_ma(close, InpSlowPeriod, InpMethod)
+
+// ---- Functions ----
+IsNewBar() =>
+    var int lastBar = 0
+    int cur = time
+    if cur == lastBar
+        false
+    else
+        lastBar := cur
+        true
+
+// ---- Logic (runs once per bar, like OnTick on a new bar) ----
+array.set(posState, 0, strategy.position_size)
+if IsNewBar()
+    bool crossUp = fast[1] < slow[1] and fast > slow
+    bool crossDown = fast[1] > slow[1] and fast < slow
+    float ask_ = close
+    float bid_ = close
+    if crossUp
+        if f_pos() != 0 and f_pos() < 0
+            strategy.close_all(comment = "Close")
+            array.set(posState, 0, 0.0)
+        if f_pos() == 0
+            float sl = math.round(ask_ - InpStopLoss * syminfo.mintick, math.round(-math.log10(syminfo.mintick)))
+            float tp = math.round(ask_ + InpTakeProfit * syminfo.mintick, math.round(-math.log10(syminfo.mintick)))
+            strategy.entry("Buy", strategy.long, qty = InpLots, comment = "MA cross buy")
+            array.set(posState, 0, InpLots)
+            strategy.exit("Buy SL/TP", from_entry = "Buy", stop = sl, limit = tp)
+    else if crossDown
+        if f_pos() != 0 and f_pos() > 0
+            strategy.close_all(comment = "Close")
+            array.set(posState, 0, 0.0)
+        if f_pos() == 0
+            float sl2 = math.round(bid_ + InpStopLoss * syminfo.mintick, math.round(-math.log10(syminfo.mintick)))
+            float tp2 = math.round(bid_ - InpTakeProfit * syminfo.mintick, math.round(-math.log10(syminfo.mintick)))
+            strategy.entry("Sell", strategy.short, qty = InpLots, comment = "MA cross sell")
+            array.set(posState, 0, -InpLots)
+            strategy.exit("Sell SL/TP", from_entry = "Sell", stop = sl2, limit = tp2)

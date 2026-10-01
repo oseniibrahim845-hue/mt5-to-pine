@@ -1,0 +1,63 @@
+// This Pine Script was generated from MQL5 by mt5-to-pine.
+// Review the notes the converter returned before trading with it.
+//@version=6
+strategy("Bollinger breakout with trailing stop", overlay = true, pyramiding = 1, calc_on_every_tick = false)
+
+// ---- Inputs ----
+BBPeriod = input.int(20, "BB period")
+BBDev = input.float(2.0, "BB deviation")
+TrailPoints = input.int(200, "Trailing stop (points)")
+Lots = input.float(0.1, "Lots")
+TrendTF = input.timeframe("240", "Trend timeframe")
+TrendMA = input.int(50, "Trend MA period")
+
+// ---- Helpers ----
+// Position seen by the EA logic on this bar (MT5 updates it right after each order).
+var posState = array.new_float(1, 0.0)
+f_pos() => array.get(posState, 0)
+
+// ---- Indicators ----
+trendMa = request.security(syminfo.tickerid, TrendTF, ta.sma(close, TrendMA))
+[bands_mid, bands_upper, bands_lower] = ta.bb(close, BBPeriod, BBDev)
+
+// ---- Functions ----
+Trail() =>
+    if not f_pos() == 0
+        float open_ = strategy.position_avg_price
+        float bid_ = close
+        float ask_ = close
+        if f_pos() > 0
+            float newSl = bid_ - TrailPoints * syminfo.mintick
+            if newSl > open_
+                if f_pos() > 0
+                    strategy.exit("Buy SL/TP", from_entry = "Buy", stop = newSl)
+                else if f_pos() < 0
+                    strategy.exit("Sell SL/TP", from_entry = "Sell", stop = newSl)
+        else
+            float newSl = ask_ + TrailPoints * syminfo.mintick
+            if newSl < open_
+                if f_pos() > 0
+                    strategy.exit("Buy SL/TP", from_entry = "Buy", stop = newSl)
+                else if f_pos() < 0
+                    strategy.exit("Sell SL/TP", from_entry = "Sell", stop = newSl)
+
+// ---- Logic (runs once per bar, like OnTick on a new bar) ----
+array.set(posState, 0, strategy.position_size)
+var int prevTime = 0
+if time != prevTime
+    prevTime := time
+    Trail()
+    bool trendUp = close > trendMa
+    if (f_pos() != 0 ? 1 : 0) == 0
+        if trendUp and close > bands_upper and close[1] <= bands_upper[1]
+            strategy.entry("Buy", strategy.long, qty = Lots)
+            array.set(posState, 0, Lots)
+        else if not trendUp and close < bands_lower and close[1] >= bands_lower[1]
+            strategy.entry("Sell", strategy.short, qty = Lots)
+            array.set(posState, 0, -Lots)
+    else if f_pos() > 0 and close < bands_mid
+        strategy.close_all(comment = "Close")
+        array.set(posState, 0, 0.0)
+    else if f_pos() < 0 and close > bands_mid
+        strategy.close_all(comment = "Close")
+        array.set(posState, 0, 0.0)

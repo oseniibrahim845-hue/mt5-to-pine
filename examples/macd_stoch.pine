@@ -1,0 +1,59 @@
+// This Pine Script was generated from MQL5 by mt5-to-pine.
+// Review the notes the converter returned before trading with it.
+//@version=6
+strategy("MACD + Stochastic", overlay = true, pyramiding = 1, calc_on_every_tick = false)
+
+// ---- Inputs ----
+FastEMA = input.int(12, "FastEMA")
+SlowEMA = input.int(26, "SlowEMA")
+SignalSMA = input.int(9, "SignalSMA")
+KPeriod = input.int(5, "KPeriod")
+DPeriod = input.int(3, "DPeriod")
+Slowing = input.int(3, "Slowing")
+RiskPercent = input.float(1.0, "Risk % per trade")
+
+// ---- Helpers ----
+// Position seen by the EA logic on this bar (MT5 updates it right after each order).
+var posState = array.new_float(1, 0.0)
+f_pos() => array.get(posState, 0)
+
+// ---- Indicators ----
+macd_main = ta.ema(close, FastEMA) - ta.ema(close, SlowEMA)
+macd_signal = ta.sma(macd_main, SignalSMA)
+stoch_k = ta.sma(ta.stoch(close, high, low, KPeriod), Slowing)
+stoch_d = ta.sma(stoch_k, DPeriod)
+
+// ---- Functions ----
+CalcLots(float slPoints) =>
+    float balance = strategy.initial_capital + strategy.netprofit
+    float tickValue = syminfo.pointvalue * syminfo.mintick
+    float risk = balance * RiskPercent / 100.0
+    if tickValue <= 0 or slPoints <= 0
+        0.01
+    else
+        float lots = risk / (slPoints * tickValue)
+        float step = 0.01
+        lots := math.floor(lots / step) * step
+        math.max(lots, 0.01)
+
+// ---- Logic (runs once per bar, like OnTick on a new bar) ----
+array.set(posState, 0, strategy.position_size)
+bool macdUp = macd_main[1] > macd_signal[1] and macd_main[2] <= macd_signal[2]
+bool macdDn = macd_main[1] < macd_signal[1] and macd_main[2] >= macd_signal[2]
+bool stochOkBuy = stoch_k[1] < 50 and stoch_k[1] > stoch_d[1]
+bool stochOkSell = stoch_k[1] > 50 and stoch_k[1] < stoch_d[1]
+if f_pos() == 0
+    float ask_ = close
+    float bid_ = close
+    float lots = CalcLots(400)
+    string msg = "Signal at " + str.tostring(ask_) + " lots=" + str.tostring(lots)
+    if macdUp and stochOkBuy
+        strategy.entry("Buy", strategy.long, qty = lots)
+        array.set(posState, 0, lots)
+        strategy.exit("Buy SL/TP", from_entry = "Buy", stop = ask_ - 400 * syminfo.mintick)
+        log.info(msg)
+    else if macdDn and stochOkSell
+        strategy.entry("Sell", strategy.short, qty = lots)
+        array.set(posState, 0, -lots)
+        strategy.exit("Sell SL/TP", from_entry = "Sell", stop = bid_ + 400 * syminfo.mintick)
+        log.info(str.format("Sell {0,number,0.00} lots at {1,number,0.00000}", lots, bid_))
